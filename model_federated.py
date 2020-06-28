@@ -17,6 +17,8 @@ from read_data import ChestXrayDataSet
 from sklearn.metrics import roc_auc_score
 import syft as sy
 import re
+from PIL import Image
+import cv2
 
 
 ## Initialize the pysyt parameters
@@ -42,6 +44,15 @@ def main():
     # initialize and load the model
     model = DenseNet121(N_CLASSES).cuda()
     # model = torch.nn.DataParallel(model).cuda()
+
+    ## getting the images list to be used for heatmap generation
+    image_names = []
+    with open(TEST_IMAGE_LIST, 'r') as f:
+        for line in f:
+            items = line.split()
+            image_names.append(items[0])
+    ##############################################################
+
 
     if os.path.isfile(CKPT_PATH):
         print("=> loading checkpoint")
@@ -89,15 +100,17 @@ def main():
 
     # switch to evaluate mode
     model.eval()
-
+    model_nosyft = model
     for i, (inp, target) in enumerate(test_loader):
         location = inp.location
         inp = inp.get()
         bs, n_crops, c, h, w = inp.size()
+        # print(inp.size())
         # input_var = torch.autograd.Variable(torch.FloatTensor(inp.view(-1, c, h, w)).cuda(), volatile=True).send(location)
         input_var = inp.view(-1, c, h, w).cuda().send(location)
         model.send(location)
         output = model(input_var)
+        # print(f'output of the inference is {output.shape}')
         output_mean = output.view(bs, n_crops, -1).mean(1)
         output_mean_data = output_mean.get()
         model.get()
@@ -109,10 +122,58 @@ def main():
     for arr in pred_np:
       indexes.append([index for index, val in enumerate(arr) if val == 1])
     for index, disease_array in enumerate(indexes):
-      if len(disease_array) > 0:
-        print(f'XRAY :: {index + 1} :: {[CLASS_NAMES[i] for i in disease_array]}')
-      else:
-        print(f'XRAY :: {index + 1} :: No Disease detected')
+        if len(disease_array) > 0:
+            print(f'XRAY :: {index + 1} :: {[CLASS_NAMES[i] for i in disease_array]}')
+        else:
+            print(f'XRAY :: {index + 1} :: No Disease detected')
+        get_heat_map(model_nosyft, image_names[index], DATA_DIR)
+
+
+def get_heat_map(model, image_name, DATA_DIR):
+    test_model = model.densenet121.features
+    test_model.eval()
+    weights = list(test_model.parameters())[-2]
+    normalize = transforms.Normalize([0.485, 0.456, 0.406],
+                                     [0.229, 0.224, 0.225])
+    #---- Initialize the image transform - resize + normalize
+    transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.TenCrop(224),
+        transforms.Lambda
+        (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+        transforms.Lambda
+        (lambda crops: torch.stack([normalize(crop) for crop in crops]))])
+    
+    #--------------------------------------------------------------------------------
+    imageData = Image.open(os.path.join(DATA_DIR, image_name)).convert('RGB')
+    imageData = transform(imageData)
+
+    imageData_cuda = imageData.cuda()
+    output = test_model(imageData_cuda)
+    
+    #---------- Heatmap Generation ---------------------------------------------------
+    heatmap = None
+    for i in range(0, len(weights)):
+        maps = output[0,i,:,:]
+        if i == 0:
+            heatmap = weights[i] * maps
+        else:
+            heatmap += weights[i] * maps
+    #----------------------------------------------------------------------------------
+
+    heatmap_np = heatmap.cpu().data.numpy()
+    imOriginal = cv2.imread(os.path.join(DATA_DIR, image_name))
+    imgOriginal = cv2.resize(imOriginal, (256, 256))
+
+
+    cam = heatmap_np / np.max(heatmap_np)
+    cam = cv2.resize(cam, (256, 256))
+    heatmap = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
+    img = heatmap * 0.5 + imgOriginal
+    cv2.imwrite(f'./{image_name}',img)
+
+
+
 
 
 class DenseNet121(nn.Module):
