@@ -141,7 +141,8 @@ def main():
             print(f'XRAY :: {index + 1} :: {[CLASS_NAMES[i] for i in disease_array]}')
         else:
             print(f'XRAY :: {index + 1} :: No Disease detected')
-        print("Confidence of the 14 classes are {}".format(pred[i] * 100))
+        # print("Confidence of the 14 classes are {}".format(pred[i] * 100))
+        print("Confidence of the 14 classes are {}".format({CLASS_NAMES[j]: pred[j]  * 100 for j in range(len(pred[index]))}))
         # get_heat_map(model_nosyft, image_names[index], DATA_DIR)
 
 
