@@ -40,7 +40,7 @@ with open(TEST_IMAGE_LIST, 'r') as f:
     items = line.split()
     image_names.append(items[0])
 workers = []
-for i in range(len(image_names) // 3):
+for i in range(len(image_names) // 2):
   worker = sy.VirtualWorker(hook, id=str(i))
   workers.append(worker)
 print("Number of workers created = {}".format(len(workers)))
@@ -142,8 +142,8 @@ def main():
         else:
             print(f'XRAY :: {index + 1} :: No Disease detected')
         # print("Confidence of the 14 classes are {}".format(pred[i] * 100))
-        print("Confidence of the 14 classes are {}".format({CLASS_NAMES[j]: pred[j]  * 100 for j in range(len(pred[index]))}))
-        # get_heat_map(model_nosyft, image_names[index], DATA_DIR)
+        print("Confidence of the 14 classes are {}".format({CLASS_NAMES[j]: pred[index][j]  * 100 for j in range(len(pred[index]))}))
+        get_heat_map(model_nosyft, image_names[index], DATA_DIR)
 
 
 def compute_AUCs(gt, pred):
@@ -238,12 +238,12 @@ def get_heat_map(model, image_name, DATA_DIR):
     #---------- Heatmap Generation ---------------------------------------------------
     heatmap = None
     for j in range(10):
-        for i in range(0, len(weights)):
-            maps = output[j,i,:,:]
-            if i == 0:
-                heatmap = weights[i] * maps
-            else:
-                heatmap += weights[i] * maps
+      for i in range(0, len(weights)):
+        maps = output[j,i,:,:]
+        if i == 0:
+          heatmap = weights[i] * maps
+        else:
+          heatmap += weights[i] * maps
     #----------------------------------------------------------------------------------
 
     heatmap_np = heatmap.cpu().data.numpy()
